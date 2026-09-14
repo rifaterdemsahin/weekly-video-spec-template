@@ -10,3 +10,8 @@ Weekly video spec template
 - ✨ Click **Generate Prompt** to produce the full, ready-to-paste prompt
 - 📋 **Copy to Clipboard** or ⬇️ **Download** it as a `.md` file
 - 🚀 Paste the result into Claude Code from an empty parent directory to scaffold a new weekly video pre-production repo end-to-end
+
+## ✅ Sanity Check
+🎥 See this style in action — a sample video produced with this exact template: **https://www.youtube.com/watch?v=fJjxujMASkQ**
+
+Use it to confirm your scaffolded repo (research → arguments → script → design → previsualisation → assets → todo) is on track to produce the same kind of end result. 🧪👍
