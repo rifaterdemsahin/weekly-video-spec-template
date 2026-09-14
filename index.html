@@ -142,6 +142,10 @@
         <input id="videoSlug" placeholder="sep-3-agentic-coding" value="sep-3-agentic-coding">
       </div>
       <div class="field">
+        <label for="videoId">🆔 VIDEO_ID <span class="badge">shared DB key</span></label>
+        <input id="videoId" placeholder="e.g. a short uuid, distinct from the slug">
+      </div>
+      <div class="field">
         <label for="cfWorkerName">☁️ CF_WORKER_NAME</label>
         <input id="cfWorkerName" placeholder="auto-fills from slug">
       </div>
@@ -171,21 +175,16 @@
   </div>
 
   <div class="card">
-    <h2>🗄️ Supabase <span class="badge">secret</span></h2>
+    <h2>🔐 Azure Key Vault <span class="badge">no secrets typed here</span></h2>
     <div class="grid">
       <div class="field full">
-        <label for="supabaseUrl">🔗 SUPABASE_URL</label>
-        <input id="supabaseUrl" placeholder="https://&lt;project-ref&gt;.supabase.co">
-      </div>
-      <div class="field full">
-        <label for="supabaseAnonKey">🔑 SUPABASE_ANON_KEY</label>
-        <input id="supabaseAnonKey" placeholder="&lt;anon key&gt;">
-      </div>
-      <div class="field full">
-        <label for="supabaseDbUrl">🛢️ SUPABASE_DB_URL</label>
-        <input id="supabaseDbUrl" placeholder="postgresql://postgres:&lt;password&gt;@db.&lt;project-ref&gt;.supabase.co:5432/postgres">
+        <label for="keyVaultName">🗝️ AZURE_KEY_VAULT_NAME</label>
+        <input id="keyVaultName" placeholder="e.g. weekly-video-secrets">
       </div>
     </div>
+    <p style="color: var(--muted); font-size: 0.82rem; margin: 12px 0 0;">
+      🛡️ Supabase credentials (<code>supabase-url</code>, <code>supabase-anon-key</code>, <code>supabase-db-url</code>) are fetched by Claude Code directly from this vault at scaffold time — the shared database is reused across all weekly videos, so nothing sensitive is ever pasted into this form.
+    </p>
   </div>
 
   <div class="card">
@@ -226,23 +225,24 @@ const PROMPT_TEMPLATE = `# Claude Code Prompt — Scaffold a Weekly Video Produc
 ## VARIABLES (edit these before pasting)
 
 \`\`\`
-VIDEO_SLUG        = {{VIDEO_SLUG}}
-VIDEO_TITLE       = "{{VIDEO_TITLE}}"
-VIDEO_HYPOTHESIS  = "{{VIDEO_HYPOTHESIS}}"
-GITHUB_OWNER      = {{GITHUB_OWNER}}
-TEMPLATE_REPO     = {{TEMPLATE_REPO}}
-SUPABASE_URL      = {{SUPABASE_URL}}
-SUPABASE_ANON_KEY = {{SUPABASE_ANON_KEY}}
-SUPABASE_DB_URL   = {{SUPABASE_DB_URL}}
-CF_WORKER_NAME    = {{CF_WORKER_NAME}}
-LOCAL_PORT        = {{LOCAL_PORT}}
+VIDEO_SLUG            = {{VIDEO_SLUG}}
+VIDEO_ID              = {{VIDEO_ID}}
+VIDEO_TITLE           = "{{VIDEO_TITLE}}"
+VIDEO_HYPOTHESIS      = "{{VIDEO_HYPOTHESIS}}"
+GITHUB_OWNER          = {{GITHUB_OWNER}}
+TEMPLATE_REPO         = {{TEMPLATE_REPO}}
+AZURE_KEY_VAULT_NAME  = {{AZURE_KEY_VAULT_NAME}}
+CF_WORKER_NAME        = {{CF_WORKER_NAME}}
+LOCAL_PORT            = {{LOCAL_PORT}}
 \`\`\`
+
+🔐 **No Supabase credentials are pasted here.** They are fetched at scaffold time straight from \`{{AZURE_KEY_VAULT_NAME}}\` — see Constraint 10.
 
 ---
 
 ## CONTEXT
 
-I produce one YouTube video per week for an AI-education channel. Every video gets its own pre-production repository built from the same reference project: \`{{TEMPLATE_REPO}}\`. That project is a **static HTML site with zero build step**, backed by **Supabase Postgres** for all authored content, deployed to **Cloudflare Workers** (canonical) with **GitHub Pages** acting only as a redirect. It models pre-production as a linked pipeline of pages, each feeding the next:
+I produce one YouTube video per week for an AI-education channel. Every video gets its own pre-production repository built from the same reference project: \`{{TEMPLATE_REPO}}\`. That project is a **static HTML site with zero build step**, backed by **one shared Supabase Postgres project reused across every weekly video** (all rows scoped by \`{{VIDEO_ID}}\`, credentials pulled from Azure Key Vault — never a new project per video), deployed to **Cloudflare Workers** (canonical) with **GitHub Pages** acting only as a redirect. It models pre-production as a linked pipeline of pages, each feeding the next:
 
 \`\`\`
 Research → Arguments → Script → Design → Previsualisation → (Assets, Todo alongside)
@@ -294,16 +294,18 @@ Reference architecture (copy this shape exactly):
 └── README.md
 \`\`\`
 
-Supabase schema (unchanged from the template):
+Supabase schema (same shape as the template, now shared across videos and scoped by \`video_id\`):
 
 | table | key columns |
 |---|---|
-| \`videos\` | \`id\` (= \`{{VIDEO_SLUG}}\`), \`title\`, \`description\`, \`slug\`, \`status\` (\`draft\`/\`production\`/\`review\`/\`published\`), timestamps |
-| \`content_blocks\` | \`id\`, \`page\` (e.g. \`script.html\`), \`section\` (e.g. \`beats\`), \`position\`, \`type\` (\`link-card\` / \`argument-card\` / \`beat\` / \`shot-panel\`), \`data\` jsonb |
-| \`assets\` | \`id\`, \`type\`, \`title\`, \`description\`, \`source\`, \`url\`, \`comment\`, \`added_at\` |
-| \`notes\`, \`item_notes\` | freeform + per-card annotations |
-| \`ratings\` | 1–5 per item id |
-| \`audio_clips\` | manifest of Kokoro clips in Azure Blob Storage |
+| \`videos\` | \`id\` (= \`{{VIDEO_ID}}\`), \`slug\` (= \`{{VIDEO_SLUG}}\`), \`title\`, \`description\`, \`status\` (\`draft\`/\`production\`/\`review\`/\`published\`), timestamps |
+| \`content_blocks\` | \`id\`, \`video_id\` (= \`{{VIDEO_ID}}\`), \`page\` (e.g. \`script.html\`), \`section\` (e.g. \`beats\`), \`position\`, \`type\` (\`link-card\` / \`argument-card\` / \`beat\` / \`shot-panel\`), \`data\` jsonb |
+| \`assets\` | \`id\`, \`video_id\`, \`type\`, \`title\`, \`description\`, \`source\`, \`url\`, \`comment\`, \`added_at\` |
+| \`notes\`, \`item_notes\` | \`video_id\` + freeform + per-card annotations |
+| \`ratings\` | \`video_id\` + 1–5 per item id |
+| \`audio_clips\` | \`video_id\` + manifest of Kokoro clips in Azure Blob Storage |
+
+🗄️ Because the Supabase project is **shared**, every query and every write from \`content-db.js\`, \`assets.js\`, \`notes.js\`, \`ratings.js\` and \`audio-clips.js\` must filter/insert by \`video_id = {{VIDEO_ID}}\` — never assume the table only holds this video's rows.
 
 Content is **never hardcoded in HTML**. Every page waits on \`ContentDB.ready\` and renders client-side from \`content_blocks\`, keyed by stable item ids so ratings/notes/links survive re-seeds.
 
@@ -325,13 +327,19 @@ You are a senior platform engineer acting as my video-production tooling lead. Y
 
 **Stack — do not deviate**
 5. Static HTML + vanilla JS + one shared CSS. No framework, no bundler, no build step. Pages use relative \`../js/\`, \`../css/\`, \`../images/\` paths.
-6. Supabase Postgres is the only content store. No localStorage for authored content. \`seed-content.js\` remains the single source of truth.
+6. Supabase Postgres is the **one shared** content store — the same project used by every weekly video, never a new project. No localStorage for authored content. \`seed-content.js\` remains the single source of truth, and every row it upserts must carry \`video_id = {{VIDEO_ID}}\`.
 7. Cloudflare Workers is canonical (\`wrangler.toml\`, \`npx wrangler deploy\`). GitHub Pages must keep the \`location.replace\` redirect to the Workers URL, triggered only on a \`github.io\` hostname so local runs are unaffected. Bare \`/\` redirects to \`/html/index.html\`.
 8. Keep Kokoro TTS + Azure Blob wiring in \`audio-clips.js\` and \`assets.js\`; do not swap TTS providers.
 9. Keep the 7-theme switcher, ratings, notes, cross-stage links and the pipeline stepper working on every page.
 
 **Secrets & environment**
-10. Write \`.env\` from the VARIABLES block. Confirm \`.env\` is in \`.gitignore\` before the first commit; never commit it, and never echo secret values into logs, README, or commit messages.
+10. 🔑 **Fetch Supabase credentials from Azure Key Vault — never ask me for them, never hardcode them.**
+    \`\`\`
+    az keyvault secret show --vault-name {{AZURE_KEY_VAULT_NAME}} --name supabase-url        --query value -o tsv
+    az keyvault secret show --vault-name {{AZURE_KEY_VAULT_NAME}} --name supabase-anon-key   --query value -o tsv
+    az keyvault secret show --vault-name {{AZURE_KEY_VAULT_NAME}} --name supabase-db-url     --query value -o tsv
+    \`\`\`
+    Write the fetched values into \`.env\`. Confirm \`.env\` is in \`.gitignore\` before the first commit; never commit it, and never echo secret values into logs, README, commit messages, or the SCAFFOLD REPORT. If \`az\` isn't logged in or a secret is missing, stop and ask me — do not fall back to placeholder credentials for a shared database.
 11. Local preview server must run on port \`{{LOCAL_PORT}}\` (> 30000). Check whether it is already up before starting another.
 
 **Content**
@@ -349,9 +357,9 @@ You are a senior platform engineer acting as my video-production tooling lead. Y
 Execute in this order. Stop and ask me only if a credential is missing; otherwise run end-to-end.
 
 1. **Clone as template.** \`git clone --depth 1 {{TEMPLATE_REPO}} {{VIDEO_SLUG}}\`, \`cd\` in, remove \`.git\`, \`git init -b main\`.
-2. **Rename & rebrand.** Replace every occurrence of \`sep-1-future-of-jobs\` with \`{{VIDEO_SLUG}}\` (repo URLs, \`wrangler.toml\` name, \`videos.id\`, GitHub Pages redirect targets, \`package.json\` name, README, CLAUDE.md). Replace the video title/hypothesis everywhere per Constraint 12.
-3. **Environment.** Write \`.env\`; verify \`.gitignore\` coverage; \`npm install\`.
-4. **Database.** \`node supabase/apply-schema.js\` → \`node supabase/seed.js\` (videos row: \`{{VIDEO_SLUG}}\`, \`{{VIDEO_TITLE}}\`, \`{{VIDEO_HYPOTHESIS}}\`, status \`draft\`) → \`node supabase/seed-content.js\` with the placeholder blocks.
+2. **Rename & rebrand.** Replace every occurrence of \`sep-1-future-of-jobs\` with \`{{VIDEO_SLUG}}\` (repo URLs, \`wrangler.toml\` name, GitHub Pages redirect targets, \`package.json\` name, README, CLAUDE.md). Set \`videos.id\` to \`{{VIDEO_ID}}\` (not the slug) everywhere it's referenced in JS/SQL. Replace the video title/hypothesis everywhere per Constraint 12.
+3. **Environment.** 🔐 Fetch \`supabase-url\`, \`supabase-anon-key\`, \`supabase-db-url\` from Azure Key Vault \`{{AZURE_KEY_VAULT_NAME}}\` (Constraint 10); write \`.env\`; verify \`.gitignore\` coverage; \`npm install\`.
+4. **Database (shared, reused).** Do **not** run \`apply-schema.js\` destructively against a live shared project — first check whether the schema already exists (\`videos\`, \`content_blocks\`, etc. with a \`video_id\` column); apply only what's missing. Then \`node supabase/seed.js\` (videos row: id=\`{{VIDEO_ID}}\`, slug=\`{{VIDEO_SLUG}}\`, \`{{VIDEO_TITLE}}\`, \`{{VIDEO_HYPOTHESIS}}\`, status \`draft\`) → \`node supabase/seed-content.js\`, upserting placeholder blocks tagged with \`video_id = {{VIDEO_ID}}\` only — never touch another video's rows.
 5. **Local verify.** Start \`python3 -m http.server {{LOCAL_PORT}}\` if not running; open \`http://localhost:{{LOCAL_PORT}}/html/index.html\` in Chrome; click through all 7 pages; report console errors and fix them.
 6. **Link validation.** Run \`.agents/skills/link-validator\` and fix or remove dead links.
 7. **Docs.** Update \`README.md\` (new title, new repo/Workers URLs, unchanged folder/pipeline sections), \`CLAUDE.md\` (new repo URL), and add \`WEEKLY_CHECKLIST.md\`:
@@ -364,11 +372,13 @@ Execute in this order. Stop and ask me only if a credential is missing; otherwis
 \`\`\`
 ## SCAFFOLD REPORT
 repo:            https://github.com/{{GITHUB_OWNER}}/{{VIDEO_SLUG}}
+video_id:        {{VIDEO_ID}}
 workers_url:     <url or "skipped: <reason>">
 pages_verified:  index | arguments | script | design | previsualisation | assets | todo  → <pass/fail each>
 console_errors:  <count>
 link_validator:  <pass/fail, n fixed>
-seed_rows:       videos=<n> content_blocks=<n>
+key_vault_secrets_fetched: <supabase-url | supabase-anon-key | supabase-db-url → ok/missing>
+seed_rows:       videos=<n> content_blocks=<n> (scoped to video_id={{VIDEO_ID}})
 secrets_committed: <none | LIST>
 next_action_for_erdem: <one line>
 \`\`\`
@@ -385,13 +395,12 @@ function generatePrompt() {
 
   const data = {
     VIDEO_SLUG: slug,
+    VIDEO_ID: val('videoId', '<stable-id>'),
     VIDEO_TITLE: val('videoTitle', '<Working title of the video>'),
     VIDEO_HYPOTHESIS: val('videoHypothesis', '<One-sentence claim the video makes>'),
     GITHUB_OWNER: val('githubOwner', 'rifaterdemsahin'),
     TEMPLATE_REPO: val('templateRepo', 'https://github.com/rifaterdemsahin/sep-1-future-of-jobs'),
-    SUPABASE_URL: val('supabaseUrl', 'https://<project-ref>.supabase.co'),
-    SUPABASE_ANON_KEY: val('supabaseAnonKey', '<anon key>'),
-    SUPABASE_DB_URL: val('supabaseDbUrl', 'postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres'),
+    AZURE_KEY_VAULT_NAME: val('keyVaultName', '<key-vault-name>'),
     CF_WORKER_NAME: cfWorker,
     LOCAL_PORT: val('localPort', '30080'),
   };
