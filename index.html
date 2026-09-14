@@ -158,6 +158,25 @@
         <label for="videoHypothesis">💡 VIDEO_HYPOTHESIS</label>
         <input id="videoHypothesis" placeholder="One-sentence claim the video makes">
       </div>
+      <div class="field full">
+        <label for="videoType">🎯 VIDEO_TYPE</label>
+        <select id="videoType">
+          <option value="weekly-video">🎥 Weekly YouTube video — 6 min, reverse-engineers popular content</option>
+          <option value="course-module">🎓 Course module — 3 min locked, learning objective + hands-on result</option>
+        </select>
+      </div>
+      <div class="field full" id="weeklyVideoFields">
+        <label for="sourceContentUrl">🔁 SOURCE_CONTENT_URL <span class="badge">6 min</span></label>
+        <input id="sourceContentUrl" placeholder="URL of the popular/viral content this video reverse-engineers">
+      </div>
+      <div class="field full" id="courseModuleFields" hidden>
+        <label for="learningObjective">🎓 LEARNING_OBJECTIVE <span class="badge">3 min locked</span></label>
+        <input id="learningObjective" placeholder="What the learner can do after watching">
+      </div>
+      <div class="field full" id="courseModuleFields2" hidden>
+        <label for="handsOnKeyResults">🛠️ HANDS_ON_KEY_RESULTS <span class="badge">3 min locked</span></label>
+        <input id="handsOnKeyResults" placeholder="Concrete, verifiable artifact the learner produces">
+      </div>
     </div>
   </div>
 
@@ -227,8 +246,12 @@ const PROMPT_TEMPLATE = `# Claude Code Prompt — Scaffold a Weekly Video Produc
 
 \`\`\`
 VIDEO_SLUG            = {{VIDEO_SLUG}}
+VIDEO_TYPE            = {{VIDEO_TYPE}}
 VIDEO_TITLE           = "{{VIDEO_TITLE}}"
 VIDEO_HYPOTHESIS      = "{{VIDEO_HYPOTHESIS}}"
+SOURCE_CONTENT_URL    = {{SOURCE_CONTENT_URL}}
+LEARNING_OBJECTIVE    = "{{LEARNING_OBJECTIVE}}"
+HANDS_ON_KEY_RESULTS  = "{{HANDS_ON_KEY_RESULTS}}"
 GITHUB_OWNER          = {{GITHUB_OWNER}}
 TEMPLATE_REPO         = {{TEMPLATE_REPO}}
 AZURE_KEY_VAULT_NAME  = {{AZURE_KEY_VAULT_NAME}}
@@ -240,11 +263,15 @@ LOCAL_PORT            = {{LOCAL_PORT}}
 
 🆔 **VIDEO_ID is not supplied by me — you generate it.** It's the row key for this video in the SHARED \`videos\` table, independent of VIDEO_SLUG. Generate a short unique id (e.g. \`uuidgen | tr 'A-Z' 'a-z' | cut -c1-8\`), then query the shared \`videos\` table (\`select id from videos where id = '<candidate>'\`) and regenerate on any collision before using it anywhere. See Task step 3.
 
+🎯 **VIDEO_TYPE drives duration and content shape — exactly one, only its matching fields:**
+- 🎥 **weekly-video** — regular YouTube channel upload. Locked to **6 minutes**. Reverse-engineers \`{{SOURCE_CONTENT_URL}}\`: a popular/viral piece of existing content whose hook, structure, pacing and title/thumbnail pattern this video deconstructs and rebuilds on our topic — leave LEARNING_OBJECTIVE / HANDS_ON_KEY_RESULTS blank.
+- 🎓 **course-module** — one module inside a structured course. Locked to **3 minutes**, hard cap. Opens from \`{{LEARNING_OBJECTIVE}}\` and builds toward \`{{HANDS_ON_KEY_RESULTS}}\` — leave SOURCE_CONTENT_URL blank.
+
 ---
 
 ## CONTEXT
 
-I produce one YouTube video per week for an AI-education channel. Every video gets its own pre-production repository built from the same reference project: \`{{TEMPLATE_REPO}}\`. That project is a **static HTML site with zero build step**, backed by **one shared Supabase Postgres project reused across every weekly video** (all rows scoped by \`\${VIDEO_ID}\`, credentials pulled from Azure Key Vault — never a new project per video), deployed to **Cloudflare Workers** (canonical) with **GitHub Pages** acting only as a redirect. It models pre-production as a linked pipeline of pages, each feeding the next:
+I produce short-form videos for an AI-education channel and course, of two kinds: a **weekly-video** (regular 6-minute YouTube upload that reverse-engineers a popular piece of existing content) or a **course-module** (a 3-minute-locked module inside a structured course, built around a learning objective and a hands-on key result). Every video — either kind — gets its own pre-production repository built from the same reference project: \`{{TEMPLATE_REPO}}\`. That project is a **static HTML site with zero build step**, backed by **one shared Supabase Postgres project reused across every video, of both kinds** (all rows scoped by \`\${VIDEO_ID}\`, credentials pulled from Azure Key Vault — never a new project per video), deployed to **Cloudflare Workers** (canonical) with **GitHub Pages** acting only as a redirect. It models pre-production as a linked pipeline of pages, each feeding the next:
 
 \`\`\`
 Research → Arguments → Script → Design → Previsualisation → (Assets, Todo alongside)
@@ -300,7 +327,7 @@ Supabase schema (same shape as the template, now shared across videos and scoped
 
 | table | key columns |
 |---|---|
-| \`videos\` | \`id\` (= \`\${VIDEO_ID}\`), \`slug\` (= \`{{VIDEO_SLUG}}\`), \`title\`, \`description\`, \`status\` (\`draft\`/\`production\`/\`review\`/\`published\`), timestamps |
+| \`videos\` | \`id\` (= \`\${VIDEO_ID}\`), \`slug\` (= \`{{VIDEO_SLUG}}\`), \`title\`, \`description\`, \`video_type\` (\`weekly-video\`/\`course-module\`), \`status\` (\`draft\`/\`production\`/\`review\`/\`published\`), timestamps |
 | \`content_blocks\` | \`id\`, \`video_id\` (= \`\${VIDEO_ID}\`), \`page\` (e.g. \`script.html\`), \`section\` (e.g. \`beats\`), \`position\`, \`type\` (\`link-card\` / \`argument-card\` / \`beat\` / \`shot-panel\`), \`data\` jsonb |
 | \`assets\` | \`id\`, \`video_id\`, \`type\`, \`title\`, \`description\`, \`source\`, \`url\`, \`comment\`, \`added_at\` |
 | \`notes\`, \`item_notes\` | \`video_id\` + freeform + per-card annotations |
@@ -348,9 +375,12 @@ You are a senior platform engineer acting as my video-production tooling lead. Y
 12. Strip all "Job Apocalypse / Elon Musk" content: \`seed-content.js\`, \`transcripts/\`, \`images/\`, \`REPORT.md\`, \`README.md\`, page \`<title>\`s, nav labels, meta descriptions. Replace with \`{{VIDEO_TITLE}}\` / \`{{VIDEO_HYPOTHESIS}}\` placeholders and **one example block per type** (\`link-card\`, \`argument-card\`, \`beat\`, \`shot-panel\`) so each page renders non-empty and I can see the shape to fill in.
 13. Preserve every item-id convention from the template so \`ratings.js\`, \`notes.js\`, and \`links.js\` keep resolving.
 14. Do not invent research, arguments, or script beats for the actual video — that is my job. Placeholders must be obviously placeholders (\`TODO:\` prefix).
+15. 🎯 **Honor {{VIDEO_TYPE}} exactly — never blend the two shapes:**
+    - \`weekly-video\`: script (\`script.html\`) must fit a spoken **6-minute** runtime (~900 words @150wpm). Stage 1 Research must capture \`{{SOURCE_CONTENT_URL}}\` as a \`link-card\` tagged \`reverse-engineer-source\`, with a placeholder note on what made it work (hook, structure, pacing, title/thumbnail pattern) for me to fill in.
+    - \`course-module\`: script must fit a spoken **3-minute** runtime (~450 words @150wpm) — a hard cap; trim scope rather than exceed it. \`script.html\` must open with a block stating \`{{LEARNING_OBJECTIVE}}\`, and \`previsualisation.html\` / \`assets.html\` must build toward producing \`{{HANDS_ON_KEY_RESULTS}}\` as a distinct placeholder block.
 
 **Verification**
-15. Nothing is "done" until: schema applied, seed run without error, all 7 pages load on \`http://localhost:{{LOCAL_PORT}}/html/…\` with zero console errors, the pipeline stepper and nav render, the link-validator skill passes, and \`wrangler deploy\` succeeds (or is cleanly skipped with a stated reason if Cloudflare auth is missing).
+16. Nothing is "done" until: schema applied, seed run without error, all 7 pages load on \`http://localhost:{{LOCAL_PORT}}/html/…\` with zero console errors, the pipeline stepper and nav render, the link-validator skill passes, \`wrangler deploy\` succeeds (or is cleanly skipped with a stated reason if Cloudflare auth is missing), and the duration/content-shape rule for {{VIDEO_TYPE}} (Constraint 15) is satisfied.
 
 ---
 
@@ -362,7 +392,7 @@ Execute in this order. Stop and ask me only if a credential is missing; otherwis
 2. **Environment.** 🔐 Fetch \`supabase-url\`, \`supabase-anon-key\`, \`supabase-db-url\` from Azure Key Vault \`{{AZURE_KEY_VAULT_NAME}}\` (Constraint 10); write \`.env\`; verify \`.gitignore\` coverage; \`npm install\`.
 3. **Generate VIDEO_ID.** 🆔 Generate a short unique id (e.g. \`uuidgen | tr 'A-Z' 'a-z' | cut -c1-8\`), then query the shared database (\`select id from videos where id = '<candidate>'\`) — regenerate on any collision. Use the confirmed-unique value as \`\${VIDEO_ID}\` for every step below.
 4. **Rename & rebrand.** Replace every occurrence of \`sep-1-future-of-jobs\` with \`{{VIDEO_SLUG}}\` (repo URLs, \`wrangler.toml\` name, GitHub Pages redirect targets, \`package.json\` name, README, CLAUDE.md). Set \`videos.id\` to \`\${VIDEO_ID}\` (not the slug) everywhere it's referenced in JS/SQL. Replace the video title/hypothesis everywhere per Constraint 12.
-5. **Database (shared, reused).** Do **not** run \`apply-schema.js\` destructively against a live shared project — first check whether the schema already exists (\`videos\`, \`content_blocks\`, etc. with a \`video_id\` column); apply only what's missing. Then \`node supabase/seed.js\` (videos row: id=\`\${VIDEO_ID}\`, slug=\`{{VIDEO_SLUG}}\`, \`{{VIDEO_TITLE}}\`, \`{{VIDEO_HYPOTHESIS}}\`, status \`draft\`) → \`node supabase/seed-content.js\`, upserting placeholder blocks tagged with \`video_id = \${VIDEO_ID}\` only — never touch another video's rows.
+5. **Database (shared, reused).** Do **not** run \`apply-schema.js\` destructively against a live shared project — first check whether the schema already exists (\`videos\`, \`content_blocks\`, etc. with a \`video_id\` column, plus \`video_type\` on \`videos\`); apply only what's missing. Then \`node supabase/seed.js\` (videos row: id=\`\${VIDEO_ID}\`, slug=\`{{VIDEO_SLUG}}\`, video_type=\`{{VIDEO_TYPE}}\`, \`{{VIDEO_TITLE}}\`, \`{{VIDEO_HYPOTHESIS}}\`, status \`draft\`) → \`node supabase/seed-content.js\`, upserting placeholder blocks tagged with \`video_id = \${VIDEO_ID}\` only — including the {{VIDEO_TYPE}}-specific block from Constraint 15 — never touch another video's rows.
 6. **Local verify.** Start \`python3 -m http.server {{LOCAL_PORT}}\` if not running; open \`http://localhost:{{LOCAL_PORT}}/html/index.html\` in Chrome; click through all 7 pages; report console errors and fix them.
 7. **Link validation.** Run \`.agents/skills/link-validator\` and fix or remove dead links.
 8. **Docs.** Update \`README.md\` (new title, new repo/Workers URLs, unchanged folder/pipeline sections), \`CLAUDE.md\` (new repo URL), and add \`WEEKLY_CHECKLIST.md\`:
@@ -375,7 +405,8 @@ Execute in this order. Stop and ask me only if a credential is missing; otherwis
 \`\`\`
 ## SCAFFOLD REPORT
 repo:            https://github.com/{{GITHUB_OWNER}}/{{VIDEO_SLUG}}
-video_id:        \${VIDEO_ID}
+video_id:        \${VIDEO_ID} (generated, verified unique)
+video_type:      {{VIDEO_TYPE}} (locked duration: <6min | 3min>)
 workers_url:     <url or "skipped: <reason>">
 pages_verified:  index | arguments | script | design | previsualisation | assets | todo  → <pass/fail each>
 console_errors:  <count>
@@ -396,10 +427,16 @@ function generatePrompt() {
   const slug = val('videoSlug', '<video-slug>');
   const cfWorker = val('cfWorkerName', slug);
 
+  const videoType = document.getElementById('videoType').value;
+
   const data = {
     VIDEO_SLUG: slug,
+    VIDEO_TYPE: videoType,
     VIDEO_TITLE: val('videoTitle', '<Working title of the video>'),
     VIDEO_HYPOTHESIS: val('videoHypothesis', '<One-sentence claim the video makes>'),
+    SOURCE_CONTENT_URL: videoType === 'weekly-video' ? val('sourceContentUrl', '<url of the popular/viral content this reverse-engineers>') : '(n/a — course-module)',
+    LEARNING_OBJECTIVE: videoType === 'course-module' ? val('learningObjective', '<what the learner can do after watching>') : '(n/a — weekly-video)',
+    HANDS_ON_KEY_RESULTS: videoType === 'course-module' ? val('handsOnKeyResults', '<concrete, verifiable artifact the learner produces>') : '(n/a — weekly-video)',
     GITHUB_OWNER: val('githubOwner', 'rifaterdemsahin'),
     TEMPLATE_REPO: val('templateRepo', 'https://github.com/rifaterdemsahin/sep-1-future-of-jobs'),
     AZURE_KEY_VAULT_NAME: val('keyVaultName', '<key-vault-name>'),
@@ -471,6 +508,24 @@ function showToast() {
   cfInput.addEventListener('input', () => {
     manuallyEdited = cfInput.value !== slugInput.value;
   });
+})();
+
+// 🎯 Toggle VIDEO_TYPE-specific fields
+(function setupVideoTypeToggle() {
+  const typeSelect = document.getElementById('videoType');
+  const weeklyFields = document.getElementById('weeklyVideoFields');
+  const courseFields1 = document.getElementById('courseModuleFields');
+  const courseFields2 = document.getElementById('courseModuleFields2');
+
+  function sync() {
+    const isCourse = typeSelect.value === 'course-module';
+    weeklyFields.hidden = isCourse;
+    courseFields1.hidden = !isCourse;
+    courseFields2.hidden = !isCourse;
+  }
+
+  typeSelect.addEventListener('change', sync);
+  sync();
 })();
 </script>
 </body>
