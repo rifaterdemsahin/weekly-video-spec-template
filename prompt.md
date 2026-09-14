@@ -8,7 +8,6 @@
 
 ```
 VIDEO_SLUG            = sep-3-<short-topic>          # repo name, kebab-case, week-prefixed
-VIDEO_ID              = <stable-id>                  # unique key for this video's row in the SHARED videos table (e.g. short uuid), independent of VIDEO_SLUG
 VIDEO_TITLE           = "<Working title of the video>"
 VIDEO_HYPOTHESIS      = "<One-sentence claim the video makes>"
 GITHUB_OWNER          = rifaterdemsahin
@@ -19,6 +18,8 @@ LOCAL_PORT            = 30080
 ```
 
 🔐 **No Supabase credentials are pasted here.** They are fetched at scaffold time straight from `${AZURE_KEY_VAULT_NAME}` — see Constraint 10.
+
+🆔 **`VIDEO_ID` is not supplied by me — you generate it.** It's the row key for this video in the SHARED `videos` table, independent of `VIDEO_SLUG`. Generate a short unique id (e.g. `uuidgen | tr 'A-Z' 'a-z' | cut -c1-8`), then query the shared `videos` table (`select id from videos where id = '<candidate>'`) and regenerate on any collision before using it anywhere. See Task step 2.
 
 ---
 
@@ -139,22 +140,23 @@ You are a senior platform engineer acting as my video-production tooling lead. Y
 Execute in this order. Stop and ask me only if a credential is missing; otherwise run end-to-end.
 
 1. **Clone as template.** `git clone --depth 1 ${TEMPLATE_REPO} ${VIDEO_SLUG}`, `cd` in, remove `.git`, `git init -b main`.
-2. **Rename & rebrand.** Replace every occurrence of `sep-1-future-of-jobs` with `${VIDEO_SLUG}` (repo URLs, `wrangler.toml` name, GitHub Pages redirect targets, `package.json` name, README, CLAUDE.md). Set `videos.id` to `${VIDEO_ID}` (not the slug) everywhere it's referenced in JS/SQL. Replace the video title/hypothesis everywhere per Constraint 12.
-3. **Environment.** 🔐 Fetch `supabase-url`, `supabase-anon-key`, `supabase-db-url` from Azure Key Vault `${AZURE_KEY_VAULT_NAME}` (Constraint 10); write `.env`; verify `.gitignore` coverage; `npm install`.
-4. **Database (shared, reused).** Do **not** run `apply-schema.js` destructively against a live shared project — first check whether the schema already exists (`videos`, `content_blocks`, etc. with a `video_id` column); apply only what's missing. Then `node supabase/seed.js` (videos row: id=`${VIDEO_ID}`, slug=`${VIDEO_SLUG}`, `${VIDEO_TITLE}`, `${VIDEO_HYPOTHESIS}`, status `draft`) → `node supabase/seed-content.js`, upserting placeholder blocks tagged with `video_id = ${VIDEO_ID}` only — never touch another video's rows.
-5. **Local verify.** Start `python3 -m http.server ${LOCAL_PORT}` if not running; open `http://localhost:${LOCAL_PORT}/html/index.html` in Chrome; click through all 7 pages; report console errors and fix them.
-6. **Link validation.** Run `.agents/skills/link-validator` and fix or remove dead links.
-7. **Docs.** Update `README.md` (new title, new repo/Workers URLs, unchanged folder/pipeline sections), `CLAUDE.md` (new repo URL), and add `WEEKLY_CHECKLIST.md`:
+2. **Environment.** 🔐 Fetch `supabase-url`, `supabase-anon-key`, `supabase-db-url` from Azure Key Vault `${AZURE_KEY_VAULT_NAME}` (Constraint 10); write `.env`; verify `.gitignore` coverage; `npm install`.
+3. **Generate VIDEO_ID.** 🆔 Generate a short unique id (e.g. `uuidgen | tr 'A-Z' 'a-z' | cut -c1-8`), then query the shared database (`select id from videos where id = '<candidate>'`) — regenerate on any collision. Use the confirmed-unique value as `${VIDEO_ID}` for every step below.
+4. **Rename & rebrand.** Replace every occurrence of `sep-1-future-of-jobs` with `${VIDEO_SLUG}` (repo URLs, `wrangler.toml` name, GitHub Pages redirect targets, `package.json` name, README, CLAUDE.md). Set `videos.id` to `${VIDEO_ID}` (not the slug) everywhere it's referenced in JS/SQL. Replace the video title/hypothesis everywhere per Constraint 12.
+5. **Database (shared, reused).** Do **not** run `apply-schema.js` destructively against a live shared project — first check whether the schema already exists (`videos`, `content_blocks`, etc. with a `video_id` column); apply only what's missing. Then `node supabase/seed.js` (videos row: id=`${VIDEO_ID}`, slug=`${VIDEO_SLUG}`, `${VIDEO_TITLE}`, `${VIDEO_HYPOTHESIS}`, status `draft`) → `node supabase/seed-content.js`, upserting placeholder blocks tagged with `video_id = ${VIDEO_ID}` only — never touch another video's rows.
+6. **Local verify.** Start `python3 -m http.server ${LOCAL_PORT}` if not running; open `http://localhost:${LOCAL_PORT}/html/index.html` in Chrome; click through all 7 pages; report console errors and fix them.
+7. **Link validation.** Run `.agents/skills/link-validator` and fix or remove dead links.
+8. **Docs.** Update `README.md` (new title, new repo/Workers URLs, unchanged folder/pipeline sections), `CLAUDE.md` (new repo URL), and add `WEEKLY_CHECKLIST.md`:
    - Mon Research → Tue Arguments → Wed Script + VO → Thu Design + Previs → Fri Assets + edit handoff → Sat/Sun publish
    - each day lists the page to fill, the `seed-content.js` section to edit, and the re-seed command.
-8. **Deploy.** `npx wrangler deploy`; record the resulting `*.workers.dev` URL in README and in the GitHub Pages redirect.
-9. **Publish.** Commit, `gh repo create ${GITHUB_OWNER}/${VIDEO_SLUG} --public --source=. --push`, then open the commit page in Chrome.
-10. **Report.** Finish with exactly this block, nothing else after it:
+9. **Deploy.** `npx wrangler deploy`; record the resulting `*.workers.dev` URL in README and in the GitHub Pages redirect.
+10. **Publish.** Commit, `gh repo create ${GITHUB_OWNER}/${VIDEO_SLUG} --public --source=. --push`, then open the commit page in Chrome.
+11. **Report.** Finish with exactly this block, nothing else after it:
 
 ```
 ## SCAFFOLD REPORT
 repo:            https://github.com/${GITHUB_OWNER}/${VIDEO_SLUG}
-video_id:        ${VIDEO_ID}
+video_id:        ${VIDEO_ID} (generated, verified unique)
 workers_url:     <url or "skipped: <reason>">
 pages_verified:  index | arguments | script | design | previsualisation | assets | todo  → <pass/fail each>
 console_errors:  <count>

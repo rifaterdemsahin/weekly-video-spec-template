@@ -142,12 +142,13 @@
         <input id="videoSlug" placeholder="sep-3-agentic-coding" value="sep-3-agentic-coding">
       </div>
       <div class="field">
-        <label for="videoId">🆔 VIDEO_ID <span class="badge">shared DB key</span></label>
-        <input id="videoId" placeholder="e.g. a short uuid, distinct from the slug">
-      </div>
-      <div class="field">
-        <label for="cfWorkerName">☁️ CF_WORKER_NAME</label>
+        <label for="cfWorkerName">☁️ CF_WORKER_NAME <span class="badge">auto-filled</span></label>
         <input id="cfWorkerName" placeholder="auto-fills from slug">
+      </div>
+      <div class="field full">
+        <p style="color: var(--muted); font-size: 0.82rem; margin: 0;">
+          🆔 <strong>VIDEO_ID</strong> is not entered here — the prompt instructs Claude Code to generate a short unique id itself and verify it doesn't collide with any existing row in the shared database before using it.
+        </p>
       </div>
       <div class="field full">
         <label for="videoTitle">🏷️ VIDEO_TITLE</label>
@@ -226,7 +227,6 @@ const PROMPT_TEMPLATE = `# Claude Code Prompt — Scaffold a Weekly Video Produc
 
 \`\`\`
 VIDEO_SLUG            = {{VIDEO_SLUG}}
-VIDEO_ID              = {{VIDEO_ID}}
 VIDEO_TITLE           = "{{VIDEO_TITLE}}"
 VIDEO_HYPOTHESIS      = "{{VIDEO_HYPOTHESIS}}"
 GITHUB_OWNER          = {{GITHUB_OWNER}}
@@ -238,11 +238,13 @@ LOCAL_PORT            = {{LOCAL_PORT}}
 
 🔐 **No Supabase credentials are pasted here.** They are fetched at scaffold time straight from \`{{AZURE_KEY_VAULT_NAME}}\` — see Constraint 10.
 
+🆔 **VIDEO_ID is not supplied by me — you generate it.** It's the row key for this video in the SHARED \`videos\` table, independent of VIDEO_SLUG. Generate a short unique id (e.g. \`uuidgen | tr 'A-Z' 'a-z' | cut -c1-8\`), then query the shared \`videos\` table (\`select id from videos where id = '<candidate>'\`) and regenerate on any collision before using it anywhere. See Task step 3.
+
 ---
 
 ## CONTEXT
 
-I produce one YouTube video per week for an AI-education channel. Every video gets its own pre-production repository built from the same reference project: \`{{TEMPLATE_REPO}}\`. That project is a **static HTML site with zero build step**, backed by **one shared Supabase Postgres project reused across every weekly video** (all rows scoped by \`{{VIDEO_ID}}\`, credentials pulled from Azure Key Vault — never a new project per video), deployed to **Cloudflare Workers** (canonical) with **GitHub Pages** acting only as a redirect. It models pre-production as a linked pipeline of pages, each feeding the next:
+I produce one YouTube video per week for an AI-education channel. Every video gets its own pre-production repository built from the same reference project: \`{{TEMPLATE_REPO}}\`. That project is a **static HTML site with zero build step**, backed by **one shared Supabase Postgres project reused across every weekly video** (all rows scoped by \`\${VIDEO_ID}\`, credentials pulled from Azure Key Vault — never a new project per video), deployed to **Cloudflare Workers** (canonical) with **GitHub Pages** acting only as a redirect. It models pre-production as a linked pipeline of pages, each feeding the next:
 
 \`\`\`
 Research → Arguments → Script → Design → Previsualisation → (Assets, Todo alongside)
@@ -298,14 +300,14 @@ Supabase schema (same shape as the template, now shared across videos and scoped
 
 | table | key columns |
 |---|---|
-| \`videos\` | \`id\` (= \`{{VIDEO_ID}}\`), \`slug\` (= \`{{VIDEO_SLUG}}\`), \`title\`, \`description\`, \`status\` (\`draft\`/\`production\`/\`review\`/\`published\`), timestamps |
-| \`content_blocks\` | \`id\`, \`video_id\` (= \`{{VIDEO_ID}}\`), \`page\` (e.g. \`script.html\`), \`section\` (e.g. \`beats\`), \`position\`, \`type\` (\`link-card\` / \`argument-card\` / \`beat\` / \`shot-panel\`), \`data\` jsonb |
+| \`videos\` | \`id\` (= \`\${VIDEO_ID}\`), \`slug\` (= \`{{VIDEO_SLUG}}\`), \`title\`, \`description\`, \`status\` (\`draft\`/\`production\`/\`review\`/\`published\`), timestamps |
+| \`content_blocks\` | \`id\`, \`video_id\` (= \`\${VIDEO_ID}\`), \`page\` (e.g. \`script.html\`), \`section\` (e.g. \`beats\`), \`position\`, \`type\` (\`link-card\` / \`argument-card\` / \`beat\` / \`shot-panel\`), \`data\` jsonb |
 | \`assets\` | \`id\`, \`video_id\`, \`type\`, \`title\`, \`description\`, \`source\`, \`url\`, \`comment\`, \`added_at\` |
 | \`notes\`, \`item_notes\` | \`video_id\` + freeform + per-card annotations |
 | \`ratings\` | \`video_id\` + 1–5 per item id |
 | \`audio_clips\` | \`video_id\` + manifest of Kokoro clips in Azure Blob Storage |
 
-🗄️ Because the Supabase project is **shared**, every query and every write from \`content-db.js\`, \`assets.js\`, \`notes.js\`, \`ratings.js\` and \`audio-clips.js\` must filter/insert by \`video_id = {{VIDEO_ID}}\` — never assume the table only holds this video's rows.
+🗄️ Because the Supabase project is **shared**, every query and every write from \`content-db.js\`, \`assets.js\`, \`notes.js\`, \`ratings.js\` and \`audio-clips.js\` must filter/insert by \`video_id = \${VIDEO_ID}\` — never assume the table only holds this video's rows.
 
 Content is **never hardcoded in HTML**. Every page waits on \`ContentDB.ready\` and renders client-side from \`content_blocks\`, keyed by stable item ids so ratings/notes/links survive re-seeds.
 
@@ -327,7 +329,7 @@ You are a senior platform engineer acting as my video-production tooling lead. Y
 
 **Stack — do not deviate**
 5. Static HTML + vanilla JS + one shared CSS. No framework, no bundler, no build step. Pages use relative \`../js/\`, \`../css/\`, \`../images/\` paths.
-6. Supabase Postgres is the **one shared** content store — the same project used by every weekly video, never a new project. No localStorage for authored content. \`seed-content.js\` remains the single source of truth, and every row it upserts must carry \`video_id = {{VIDEO_ID}}\`.
+6. Supabase Postgres is the **one shared** content store — the same project used by every weekly video, never a new project. No localStorage for authored content. \`seed-content.js\` remains the single source of truth, and every row it upserts must carry \`video_id = \${VIDEO_ID}\`.
 7. Cloudflare Workers is canonical (\`wrangler.toml\`, \`npx wrangler deploy\`). GitHub Pages must keep the \`location.replace\` redirect to the Workers URL, triggered only on a \`github.io\` hostname so local runs are unaffected. Bare \`/\` redirects to \`/html/index.html\`.
 8. Keep Kokoro TTS + Azure Blob wiring in \`audio-clips.js\` and \`assets.js\`; do not swap TTS providers.
 9. Keep the 7-theme switcher, ratings, notes, cross-stage links and the pipeline stepper working on every page.
@@ -357,28 +359,29 @@ You are a senior platform engineer acting as my video-production tooling lead. Y
 Execute in this order. Stop and ask me only if a credential is missing; otherwise run end-to-end.
 
 1. **Clone as template.** \`git clone --depth 1 {{TEMPLATE_REPO}} {{VIDEO_SLUG}}\`, \`cd\` in, remove \`.git\`, \`git init -b main\`.
-2. **Rename & rebrand.** Replace every occurrence of \`sep-1-future-of-jobs\` with \`{{VIDEO_SLUG}}\` (repo URLs, \`wrangler.toml\` name, GitHub Pages redirect targets, \`package.json\` name, README, CLAUDE.md). Set \`videos.id\` to \`{{VIDEO_ID}}\` (not the slug) everywhere it's referenced in JS/SQL. Replace the video title/hypothesis everywhere per Constraint 12.
-3. **Environment.** 🔐 Fetch \`supabase-url\`, \`supabase-anon-key\`, \`supabase-db-url\` from Azure Key Vault \`{{AZURE_KEY_VAULT_NAME}}\` (Constraint 10); write \`.env\`; verify \`.gitignore\` coverage; \`npm install\`.
-4. **Database (shared, reused).** Do **not** run \`apply-schema.js\` destructively against a live shared project — first check whether the schema already exists (\`videos\`, \`content_blocks\`, etc. with a \`video_id\` column); apply only what's missing. Then \`node supabase/seed.js\` (videos row: id=\`{{VIDEO_ID}}\`, slug=\`{{VIDEO_SLUG}}\`, \`{{VIDEO_TITLE}}\`, \`{{VIDEO_HYPOTHESIS}}\`, status \`draft\`) → \`node supabase/seed-content.js\`, upserting placeholder blocks tagged with \`video_id = {{VIDEO_ID}}\` only — never touch another video's rows.
-5. **Local verify.** Start \`python3 -m http.server {{LOCAL_PORT}}\` if not running; open \`http://localhost:{{LOCAL_PORT}}/html/index.html\` in Chrome; click through all 7 pages; report console errors and fix them.
-6. **Link validation.** Run \`.agents/skills/link-validator\` and fix or remove dead links.
-7. **Docs.** Update \`README.md\` (new title, new repo/Workers URLs, unchanged folder/pipeline sections), \`CLAUDE.md\` (new repo URL), and add \`WEEKLY_CHECKLIST.md\`:
+2. **Environment.** 🔐 Fetch \`supabase-url\`, \`supabase-anon-key\`, \`supabase-db-url\` from Azure Key Vault \`{{AZURE_KEY_VAULT_NAME}}\` (Constraint 10); write \`.env\`; verify \`.gitignore\` coverage; \`npm install\`.
+3. **Generate VIDEO_ID.** 🆔 Generate a short unique id (e.g. \`uuidgen | tr 'A-Z' 'a-z' | cut -c1-8\`), then query the shared database (\`select id from videos where id = '<candidate>'\`) — regenerate on any collision. Use the confirmed-unique value as \`\${VIDEO_ID}\` for every step below.
+4. **Rename & rebrand.** Replace every occurrence of \`sep-1-future-of-jobs\` with \`{{VIDEO_SLUG}}\` (repo URLs, \`wrangler.toml\` name, GitHub Pages redirect targets, \`package.json\` name, README, CLAUDE.md). Set \`videos.id\` to \`\${VIDEO_ID}\` (not the slug) everywhere it's referenced in JS/SQL. Replace the video title/hypothesis everywhere per Constraint 12.
+5. **Database (shared, reused).** Do **not** run \`apply-schema.js\` destructively against a live shared project — first check whether the schema already exists (\`videos\`, \`content_blocks\`, etc. with a \`video_id\` column); apply only what's missing. Then \`node supabase/seed.js\` (videos row: id=\`\${VIDEO_ID}\`, slug=\`{{VIDEO_SLUG}}\`, \`{{VIDEO_TITLE}}\`, \`{{VIDEO_HYPOTHESIS}}\`, status \`draft\`) → \`node supabase/seed-content.js\`, upserting placeholder blocks tagged with \`video_id = \${VIDEO_ID}\` only — never touch another video's rows.
+6. **Local verify.** Start \`python3 -m http.server {{LOCAL_PORT}}\` if not running; open \`http://localhost:{{LOCAL_PORT}}/html/index.html\` in Chrome; click through all 7 pages; report console errors and fix them.
+7. **Link validation.** Run \`.agents/skills/link-validator\` and fix or remove dead links.
+8. **Docs.** Update \`README.md\` (new title, new repo/Workers URLs, unchanged folder/pipeline sections), \`CLAUDE.md\` (new repo URL), and add \`WEEKLY_CHECKLIST.md\`:
    - Mon Research → Tue Arguments → Wed Script + VO → Thu Design + Previs → Fri Assets + edit handoff → Sat/Sun publish
    - each day lists the page to fill, the \`seed-content.js\` section to edit, and the re-seed command.
-8. **Deploy.** \`npx wrangler deploy\`; record the resulting \`*.workers.dev\` URL in README and in the GitHub Pages redirect.
-9. **Publish.** Commit, \`gh repo create {{GITHUB_OWNER}}/{{VIDEO_SLUG}} --public --source=. --push\`, then open the commit page in Chrome.
-10. **Report.** Finish with exactly this block, nothing else after it:
+9. **Deploy.** \`npx wrangler deploy\`; record the resulting \`*.workers.dev\` URL in README and in the GitHub Pages redirect.
+10. **Publish.** Commit, \`gh repo create {{GITHUB_OWNER}}/{{VIDEO_SLUG}} --public --source=. --push\`, then open the commit page in Chrome.
+11. **Report.** Finish with exactly this block, nothing else after it:
 
 \`\`\`
 ## SCAFFOLD REPORT
 repo:            https://github.com/{{GITHUB_OWNER}}/{{VIDEO_SLUG}}
-video_id:        {{VIDEO_ID}}
+video_id:        \${VIDEO_ID}
 workers_url:     <url or "skipped: <reason>">
 pages_verified:  index | arguments | script | design | previsualisation | assets | todo  → <pass/fail each>
 console_errors:  <count>
 link_validator:  <pass/fail, n fixed>
 key_vault_secrets_fetched: <supabase-url | supabase-anon-key | supabase-db-url → ok/missing>
-seed_rows:       videos=<n> content_blocks=<n> (scoped to video_id={{VIDEO_ID}})
+seed_rows:       videos=<n> content_blocks=<n> (scoped to video_id=\${VIDEO_ID})
 secrets_committed: <none | LIST>
 next_action_for_erdem: <one line>
 \`\`\`
@@ -395,7 +398,6 @@ function generatePrompt() {
 
   const data = {
     VIDEO_SLUG: slug,
-    VIDEO_ID: val('videoId', '<stable-id>'),
     VIDEO_TITLE: val('videoTitle', '<Working title of the video>'),
     VIDEO_HYPOTHESIS: val('videoHypothesis', '<One-sentence claim the video makes>'),
     GITHUB_OWNER: val('githubOwner', 'rifaterdemsahin'),
@@ -453,6 +455,23 @@ function showToast() {
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2000);
 }
+
+// ☁️ Auto-fill CF_WORKER_NAME from VIDEO_SLUG until the user edits it manually
+(function setupCfWorkerAutofill() {
+  const slugInput = document.getElementById('videoSlug');
+  const cfInput = document.getElementById('cfWorkerName');
+  let manuallyEdited = false;
+
+  cfInput.value = slugInput.value;
+
+  slugInput.addEventListener('input', () => {
+    if (!manuallyEdited) cfInput.value = slugInput.value;
+  });
+
+  cfInput.addEventListener('input', () => {
+    manuallyEdited = cfInput.value !== slugInput.value;
+  });
+})();
 </script>
 </body>
 </html>
