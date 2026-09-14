@@ -4,7 +4,7 @@ Weekly video spec template
 ## 🔗 Live Prompt Builder
 👉 **https://rifaterdemsahin.github.io/weekly-video-spec-template/**
 
-🎬 A form-based tool that helps you build the Claude Code prompt from [`prompt.md`](./prompt.md) without hand-editing the raw `VARIABLES` block.
+🎬 A form-based tool that helps you build the Claude Code prompt from [`prompt.md`](./prompt.md) (v2 — closed learning loop) without hand-editing the raw `VARIABLES` block.
 
 - 📝 Fill in fields like video slug, title, hypothesis, GitHub owner, template repo, and your Azure Key Vault name — `CF_WORKER_NAME` auto-fills from the slug (editable)
 - 🆔 `VIDEO_ID` is **not** entered here — the generated prompt tells Claude Code to generate a short unique id itself and verify it against the shared database before using it
@@ -12,6 +12,8 @@ Weekly video spec template
 - 🎯 Pick a **VIDEO_TYPE**:
   - 🎥 **weekly-video** — regular YouTube upload, locked to **6 minutes**, reverse-engineers a popular/viral piece of content (`SOURCE_CONTENT_URL`)
   - 🎓 **course-module** — module inside a structured course, locked to **3 minutes**, built from a `LEARNING_OBJECTIVE` and a `HANDS_ON_KEY_RESULTS` the learner produces
+- 🧠 **`VIEWER_TAKEAWAY`** and **`AUDIENCE_DELIVERABLE`** are required for both types — the prompt tells Claude Code to stop and ask if either is blank rather than scaffold a video with no stated viewer outcome
+- 🔁 The scaffolded site now closes a **teach-to-learn loop**: a new Stage 0 **Unknowns** page (prior beliefs, snapshot-locked) precedes Research, a new **Journal** page renders every decision-flagged note plus a reusable **Formula**, and a new **Retro** page captures the post-publish hypothesis verdict — including, for weekly videos, whether the reverse-engineered source's hook/pacing actually held
 - ✨ Click **Generate Prompt** to produce the full, ready-to-paste prompt
 - 📋 **Copy to Clipboard** or ⬇️ **Download** it as a `.md` file
 - 🚀 Paste the result into Claude Code from an empty parent directory to scaffold a new weekly video pre-production repo end-to-end
